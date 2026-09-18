@@ -39,11 +39,7 @@ Class 8
 Class 10`;
   }
 
-  if (
-    text.includes("admission") ||
-    text.includes("एडमिशन") ||
-    text.includes("admission")
-  ) {
+  if (text.includes("admission") || text.includes("एडमिशन")) {
     return `एडमिशन की जानकारी के लिए कृपया विद्यार्थी की Class बताएं।`;
   }
 
@@ -73,10 +69,23 @@ async function sendWhatsAppMessage(
   message: string
 ): Promise<void> {
   if (!ACCESS_TOKEN || !PHONE_NUMBER_ID) {
+    console.error("Missing WhatsApp environment variables:", {
+      hasAccessToken: Boolean(ACCESS_TOKEN),
+      hasPhoneNumberId: Boolean(PHONE_NUMBER_ID),
+      apiVersion: API_VERSION,
+    });
+
     throw new Error("WhatsApp environment variables are missing.");
   }
 
   const url = `https://graph.facebook.com/${API_VERSION}/${PHONE_NUMBER_ID}/messages`;
+
+  console.log("Sending WhatsApp message:", {
+    url,
+    to,
+    apiVersion: API_VERSION,
+    phoneNumberId: PHONE_NUMBER_ID,
+  });
 
   const response = await fetch(url, {
     method: "POST",
@@ -98,12 +107,19 @@ async function sendWhatsAppMessage(
 
   const result = await response.json();
 
+  console.log("WhatsApp API response status:", response.status);
+  console.log(
+    "WhatsApp API response:",
+    JSON.stringify(result, null, 2)
+  );
+
   if (!response.ok) {
-    console.error("WhatsApp API error:", result);
-    throw new Error("Failed to send WhatsApp message.");
+    throw new Error(
+      `WhatsApp API error ${response.status}: ${JSON.stringify(result)}`
+    );
   }
 
-  console.log("WhatsApp message sent:", result);
+  console.log("WhatsApp message sent successfully:", result);
 }
 
 export async function GET(request: NextRequest) {
@@ -120,12 +136,19 @@ export async function GET(request: NextRequest) {
     token === VERIFY_TOKEN
   ) {
     console.log("WhatsApp webhook verified successfully.");
-    return new NextResponse(challenge || "", { status: 200 });
+
+    return new NextResponse(challenge || "", {
+      status: 200,
+    });
   }
 
   return NextResponse.json(
-    { error: "Webhook verification failed." },
-    { status: 403 }
+    {
+      error: "Webhook verification failed.",
+    },
+    {
+      status: 403,
+    }
   );
 }
 
@@ -133,20 +156,31 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    console.log("WhatsApp webhook received:", JSON.stringify(body));
+    console.log(
+      "WhatsApp webhook received:",
+      JSON.stringify(body, null, 2)
+    );
 
     const message =
       body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
     if (!message) {
-      return NextResponse.json({ success: true });
+      console.log("No WhatsApp message found in webhook payload.");
+
+      return NextResponse.json({
+        success: true,
+      });
     }
 
     const from = message.from;
     const messageType = message.type;
 
     if (!from) {
-      return NextResponse.json({ success: true });
+      console.log("WhatsApp message has no sender.");
+
+      return NextResponse.json({
+        success: true,
+      });
     }
 
     if (messageType !== "text") {
@@ -155,7 +189,9 @@ export async function POST(request: NextRequest) {
         "नमस्ते! फिलहाल कृपया अपना संदेश Text के रूप में भेजें।"
       );
 
-      return NextResponse.json({ success: true });
+      return NextResponse.json({
+        success: true,
+      });
     }
 
     const incomingText = message.text?.body || "";
@@ -163,6 +199,8 @@ export async function POST(request: NextRequest) {
     console.log(`Message from ${from}: ${incomingText}`);
 
     const reply = getReply(incomingText);
+
+    console.log(`Reply to ${from}: ${reply}`);
 
     await sendWhatsAppMessage(from, reply);
 
@@ -175,9 +213,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: "Webhook processing failed.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Webhook processing failed.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
